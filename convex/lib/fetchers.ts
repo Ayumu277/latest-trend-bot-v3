@@ -6,9 +6,16 @@ import { XMLParser } from "fast-xml-parser";
 // TechCrunchのRSSフィードのURL
 const TECHCRUNCH_FEED_URL = "https://techcrunch.com/feed/";
 
+// Reddit APIエンドポイント（複数のサブレディット）
+const REDDIT_SUBREDDITS = [
+  "https://www.reddit.com/r/technology/hot.json?limit=2",
+  "https://www.reddit.com/r/programming/hot.json?limit=1",
+  "https://www.reddit.com/r/artificial/hot.json?limit=1"
+];
+
 // 取得した記事の型を定義しておくと、後々便利です
 export type FetchedArticle = {
-  source: "TechCrunch";
+  source: "TechCrunch" | "Reddit";
   title: string;
   sourceUrl: string;
   content?: string;
@@ -59,11 +66,71 @@ export async function fetchTechCrunchRSS(): Promise<FetchedArticle[]> {
     }
 
     console.log(`Fetched ${articles.length} articles from TechCrunch.`);
-    // 最新5件に絞って返す
-    return articles.slice(0, 5);
+    // 最新2件に絞って返す
+    return articles.slice(0, 2);
 
   } catch (error) {
     console.error("Error in fetchTechCrunchRSS:", error);
+    // エラーが発生した場合は空の配列を返す
+    return [];
+  }
+}
+
+/**
+ * RedditのJSONエンドポイントから最新記事のリストを取得します。
+ * 複数のサブレディットから合計3件の記事を取得します。
+ * @returns 取得した記事データの配列
+ */
+export async function fetchRedditPosts(): Promise<FetchedArticle[]> {
+  try {
+    console.log("Fetching Reddit posts...");
+    const articles: FetchedArticle[] = [];
+
+    for (const subredditUrl of REDDIT_SUBREDDITS) {
+      try {
+        const response = await fetch(subredditUrl, {
+          headers: {
+            'User-Agent': 'TrendBot/1.0 (by /u/trendbot)'
+          }
+        });
+
+        if (!response.ok) {
+          console.error(`HTTP error for ${subredditUrl}! status: ${response.status}`);
+          continue;
+        }
+
+        const jsonData = await response.json();
+
+        // Redditレスポンスの構造: data.children[].data
+        const posts = jsonData?.data?.children || [];
+
+        for (const post of posts) {
+          const postData = post.data;
+
+          // スティッキーポストや削除されたポストをスキップ
+          if (postData.stickied || postData.removed || !postData.title) {
+            continue;
+          }
+
+          articles.push({
+            source: "Reddit",
+            title: postData.title,
+            sourceUrl: `https://www.reddit.com${postData.permalink}`,
+            content: postData.selftext || postData.title,
+          });
+        }
+      } catch (error) {
+        console.error(`Error fetching from subreddit ${subredditUrl}:`, error);
+        continue;
+      }
+    }
+
+    console.log(`Fetched ${articles.length} articles from Reddit.`);
+    // 最新3件に絞って返す
+    return articles.slice(0, 3);
+
+  } catch (error) {
+    console.error("Error in fetchRedditPosts:", error);
     // エラーが発生した場合は空の配列を返す
     return [];
   }
